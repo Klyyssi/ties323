@@ -18,6 +18,11 @@
  */
 object Main {
   def main(args: Array[String]) = {
-    val client = new POP3Client()
+    val client = new POP3Client("127.0.0.1", 110)
+    val res = client.login("username", "password")
+    if (!res._1) { println(res._2); System.exit(1) }
+    val list = client.getMessages()
+    list.map(x => println(x))
+    client.quit()
   }
 }
