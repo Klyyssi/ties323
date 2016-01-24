@@ -70,6 +70,22 @@ class POP3Client(val server: String, val port: Int) {
     }
   }
 
+  def getMail(mail: MailRef): String = {
+    io.send(new POP3Messages.RETR(mail.id).msg())
+    val res = POP3Messages.parseReturnMessage(io.receive())
+    res match {
+      case POP3Messages.ERR(data) =>
+        return data
+      case _ =>
+        //nothing
+    }
+
+    return Stream
+      .continually(io.receive())
+      .takeWhile(x => !x.equals("."))
+      .reduce((a,b) => new String(a + "\n" +b))
+  }
+
   def quit(): Unit = {
     io.send(new POP3Messages.QUIT().msg())
   }
@@ -96,6 +112,7 @@ class POP3Client(val server: String, val port: Int) {
     case class PASS(val password: String) extends Pop3Message { def msg(): String = { return "PASS " + password }}
     case class LIST() extends Pop3Message { def msg(): String = { return "LIST" }}
     case class QUIT() extends Pop3Message { def msg(): String = { return "QUIT" }}
+    case class RETR(val id: String) extends Pop3Message { def msg(): String = { return "RETR " + id }} // extra for the assignment
 
     abstract class Pop3ReturnMessage
     case class OK(val data: String = "") extends Pop3ReturnMessage

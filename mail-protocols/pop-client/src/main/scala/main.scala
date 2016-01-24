@@ -23,6 +23,7 @@ object Main {
     if (!res._1) { println(res._2); System.exit(1) }
     val list = client.getMessages()
     list.map(x => println(x))
+    println(client.getMail(list(0))) // read first mail
     client.quit()
   }
 }
