@@ -38,9 +38,9 @@ class SmtpServer(val port: Int) {
         case protocol.HELO =>
           io.send(s"250 Hello ${msg.value}, I am glad to meet you")
         case protocol.MAILFROM =>
-          if (protocol.mailFrom(Parser.toEmail(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
+          if (protocol.mailFrom(EmailAddress.fromString(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
         case protocol.RCPTTO =>
-          if (protocol.rcptTo(Parser.toEmail(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
+          if (protocol.rcptTo(EmailAddress.fromString(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
         case protocol.DATA =>
           if (protocol.data(msg.value)) io.send(s"354 End data with <CR><LF>.<CR><LF>") else io.send("500 Syntax error, command unrecognized")
         case protocol.QUIT =>
@@ -53,6 +53,7 @@ class SmtpServer(val port: Int) {
           } else {
             if (res._2 == protocol.DataStatus.FINISHED) {
               io.send("250 Ok")
+              InboxManager.put(res._3.get)
             }
           }
       }
@@ -66,15 +67,6 @@ class SmtpServer(val port: Int) {
 
   while (true) {
     subject.onNext(serverSocket.accept())
-  }
-
-  class EmailAddress(val email: String)
-
-  object Parser {
-    def toEmail(email: String): EmailAddress = {
-      return new EmailAddress(email)
-    }
-
   }
 
   class ClientIO(val socket: Socket) {
@@ -114,7 +106,7 @@ class SmtpServer(val port: Int) {
 
     var status: MessageType = HELO
 
-    object EMAIL {
+    private object EMAIL {
       var mailfrom: EmailAddress = _
       var mailTo: scala.collection.mutable.MutableList[EmailAddress] = scala.collection.mutable.MutableList()
       var data: String = ""
@@ -152,14 +144,14 @@ class SmtpServer(val port: Int) {
       return true
     }
 
-    def appendData(value: String): Tuple2[Boolean, DataStatus] = {
-     if (status != DATA) { return (false, DataStatus.NOT_FINISHED) }
+    def appendData(value: String): (Boolean, DataStatus, Option[Email]) = {
+     if (status != DATA) { return (false, DataStatus.NOT_FINISHED, None) }
      EMAIL.data += value
      if (EMAIL.data.getBytes().endsWith(CRLF_DOT_CRLF)) {
        status = QUIT
-       return (true, DataStatus.FINISHED)
+       return (true, DataStatus.FINISHED, Some(new Email(EMAIL.mailfrom, EMAIL.mailTo.toList, EMAIL.data)))
      }
-     return (true, DataStatus.NOT_FINISHED)
+     return (true, DataStatus.NOT_FINISHED, None)
     }
   }
 }
