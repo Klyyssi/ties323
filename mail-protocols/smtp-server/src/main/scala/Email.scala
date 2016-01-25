@@ -17,10 +17,30 @@
  */
 class Email(val from: EmailAddress, val to: List[EmailAddress], val mail: String)
 
-class EmailAddress(val email: String)
+class EmailAddress(val email: String) {
+  override def equals(other: Any) = other.isInstanceOf[EmailAddress] && email == other.asInstanceOf[EmailAddress].email
+}
 
 object EmailAddress {
+
+  val replaceMap = Map(
+    "<" -> "",
+    ">" -> "",
+    "\r" -> "",
+    "\n" -> ""
+  )
+
   def fromString(email: String): EmailAddress = {
-    return new EmailAddress(email.replaceAll("<","").replaceAll(">",""))
+    return new EmailAddress(replaceMap.foldLeft(email)((a, b) => a.replaceAll(b._1, b._2)))
   }
+}
+
+class MailRef(val id: String, val size: String) {
+  override def toString():String = {
+    return id + " " + size
+  }
+}
+
+object MailRef {
+  def default(): MailRef = { return new MailRef("", "")}
 }

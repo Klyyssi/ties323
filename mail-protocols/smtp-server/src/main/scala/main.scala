@@ -18,5 +18,6 @@
 object Main {
   def main(args: Array[String]) = {
     val server = new SmtpServer(8080)
+    val popServer = new Pop3Server(8081)
   }
 }

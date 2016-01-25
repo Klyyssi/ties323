@@ -21,13 +21,16 @@ object InboxManager {
   def put(email: Email): Unit = {
     userToInbox.synchronized {
       email.to
-        .map(x => if (userToInbox.contains(x)) userToInbox(x).put(email) else userToInbox += (x -> Inbox.create().put(email)))
+        .map(x => if (userToInbox.contains(x)) userToInbox(x).put(email) else {
+          userToInbox += (x -> Inbox.create())
+          userToInbox(x).put(email)
+        })
     }
   }
 
-  def get(emailAddr: EmailAddress): Inbox = {
+  def get(emailAddr: EmailAddress): Option[Inbox] = {
     userToInbox.synchronized {
-      return userToInbox(emailAddr)
+      return userToInbox.get(emailAddr)
     }
   }
 }

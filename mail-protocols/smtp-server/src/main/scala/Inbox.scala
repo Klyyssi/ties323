@@ -1,3 +1,5 @@
+import java.util.concurrent.atomic.AtomicInteger
+
 /*
  * Copyright (c) 2016 Markus Mulkahainen
  *
@@ -18,6 +20,8 @@
 trait Inbox {
   def put(mail: Email)
   def getMails(): List[Email]
+  def getMailRefs(): List[MailRef]
+  def getMail(mailRef: MailRef): Email
 }
 
 object Inbox {
@@ -28,13 +32,26 @@ object Inbox {
 
 class InboxImpl extends Inbox {
 
-  val mails = List()
+  var mails: Map[MailRef, Email] = Map()
+  val idGen = new AtomicInteger(0)
 
   override def put(mail: Email): Unit = {
-    mails :+ mail
+    mails += (new MailRef(nextId().toString(), mail.mail.getBytes().length.toString()) -> mail)
   }
 
   override def getMails(): List[Email] = {
-    return mails
+    return mails.values.toList
+  }
+
+  override def getMailRefs(): List[MailRef] = {
+    return mails.keys.toList
+  }
+
+  override def getMail(mailRef: MailRef): Email = {
+    return mails(mailRef)
+  }
+
+  private def nextId(): Int = {
+    return idGen.getAndIncrement()
   }
 }
