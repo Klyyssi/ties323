@@ -61,7 +61,7 @@ class Pop3Server(val port: Int) {
             io.send(new POP3Messages.OK(mail.mail.getBytes().length + " octets").msg())
             io.send("RCPT TO: " + mail.to
               .map(x => x.email).reduce((a,b) => a + "," + b) +
-              "\r\nFROM: " + mail.from.toString() + "\r\n"
+              "\r\nFROM: " + mail.from.email + "\r\n"
               + mail.mail)
           case POP3Messages.QUIT() =>
             io.send(new POP3Messages.OK("Bye").msg())
@@ -110,7 +110,7 @@ class Pop3Server(val port: Int) {
 
     def parseReturnMessage(msg: String): Pop3ReturnMessage = {
       val sepAndFn = strToMsgMap
-        .filterKeys(x => msg.startsWith(x))
+        .filterKeys(x => msg.toUpperCase().startsWith(x))
         .values
         .headOption
         .getOrElse((new DataSeparator(""), (x: String) => new DEFAULT(x)))

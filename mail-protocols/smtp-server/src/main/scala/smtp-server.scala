@@ -114,7 +114,7 @@ class SmtpServer(val port: Int) {
     )
 
     def parse(value: String): SMTPMessage = {
-      val messageType = stringToType.filterKeys(x => value.startsWith(x)).values.headOption.getOrElse(DEFAULT)
+      val messageType = stringToType.filterKeys(x => value.toUpperCase().startsWith(x)).values.headOption.getOrElse(DEFAULT)
       return new SMTPMessage(messageType, value.substring(value.indexOf(messageType.dataSeparator) + messageType.dataSeparator.length()))
     }
 
