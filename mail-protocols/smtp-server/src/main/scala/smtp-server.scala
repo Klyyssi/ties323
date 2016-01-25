@@ -15,6 +15,7 @@
 import java.io.{PrintWriter, InputStreamReader, BufferedReader}
 import java.net.{Socket, ServerSocket}
 
+import rx.lang.scala.Observable
 import rx.lang.scala.subjects.PublishSubject
 
 /**
@@ -25,72 +26,56 @@ class SmtpServer(val port: Int) {
   val subject = PublishSubject[Socket]()
   val serverSocket = new ServerSocket(port)
 
-  subject.subscribe(client => new Thread(){
-    println(client.getLocalAddress().toString() + ":" + client.getLocalPort() + " connected")
-    val protocol = new SMTPProtocol()
-    val io = new ClientIO(client)
-    io.send(s"220 welcome")
+  subject.subscribe(client => new Thread(new Runnable() {
+    def run() {
+      println(client.getLocalAddress().toString() + ":" + client.getLocalPort() + " connected")
+      val protocol = new SMTPProtocol()
+      val io = new ClientIO(client)
+      io.send(s"220 welcome")
 
-    while (!client.isClosed) {
-      val msg = protocol.parse(io receive)
+      while (!client.isClosed) {
+        val msg = protocol.parse(io receive)
 
-      msg.messageType match {
-        case protocol.HELO =>
-          io.send(s"250 Hello ${msg.value}, I am glad to meet you")
-        case protocol.MAILFROM =>
-          if (protocol.mailFrom(Parser.toEmail(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
-        case protocol.RCPTTO =>
-          if (protocol.rcptTo(Parser.toEmail(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
-        case protocol.DATA =>
-          if (protocol.data(msg.value)) io.send(s"354 End data with <CR><LF>.<CR><LF>") else io.send("500 Syntax error, command unrecognized")
-        case protocol.QUIT =>
-          io.send(s"221 Bye")
-          client.close()
-        case protocol.DEFAULT =>
-          val res = protocol.appendData(msg.value)
-          if (!res._1) {
-            io.send("500 Syntax error, command unrecognized")
-          } else {
-            if (res._2 == protocol.DataStatus.FINISHED) {
-              io.send("250 Ok")
+        msg.messageType match {
+          case protocol.HELO =>
+            io.send(s"250 Hello ${msg.value.replaceAll("\r\n", "")}, I am glad to meet you")
+          case protocol.MAILFROM =>
+            if (protocol.mailFrom(EmailAddress.fromString(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
+          case protocol.RCPTTO =>
+            if (protocol.rcptTo(EmailAddress.fromString(msg.value))) io.send(s"250 Ok") else io.send("500 Syntax error, command unrecognized")
+          case protocol.DATA =>
+            if (protocol.data(msg.value)) io.send(s"354 End data with <CR><LF>.<CR><LF>") else io.send("500 Syntax error, command unrecognized")
+          case protocol.QUIT =>
+            io.send(s"221 Bye")
+            client.close()
+          case protocol.DEFAULT =>
+            val res = protocol.appendData(msg.value)
+            if (!res._1) {
+              io.send("500 Syntax error, command unrecognized")
+            } else {
+              if (res._2 == protocol.DataStatus.FINISHED) {
+                io.send("250 Ok")
+                InboxManager.put(res._3.get)
+              }
             }
-          }
+        }
       }
     }
-  }.start(),
+  }).start(),
   x => { //onError
     System.exit(1)
   })
 
-  println("Waiting for incoming requests")
+  println("SMTP server waiting for requests on port " + port)
 
-  while (true) {
-    subject.onNext(serverSocket.accept())
-  }
-
-  class EmailAddress(val email: String)
-
-  object Parser {
-    def toEmail(email: String): EmailAddress = {
-      return new EmailAddress(email)
+  val t = new Thread(new Runnable() {
+    def run() {
+      while (subject.hasObservers) {
+        subject.onNext(serverSocket.accept())
+      }
     }
-
-  }
-
-  class ClientIO(val socket: Socket) {
-    val out = new PrintWriter(socket.getOutputStream(), true)
-    val in = new InputStreamReader(socket.getInputStream())
-
-    def send(msg: String): Unit = {
-      out.println(msg)
-    }
-
-    def receive(): String = {
-      val chars = new Array[Char](256)
-      in.read(chars)
-      return new String(chars.takeWhile(x => x != 0))
-    }
-  }
+  })
+  t.start()
 
   class SMTPProtocol {
     sealed abstract class MessageType(val dataSeparator: String)
@@ -114,9 +99,9 @@ class SmtpServer(val port: Int) {
 
     var status: MessageType = HELO
 
-    object EMAIL {
+    private object EMAIL {
       var mailfrom: EmailAddress = _
-      var mailTo: scala.collection.mutable.MutableList[EmailAddress] = scala.collection.mutable.MutableList()
+      var mailTo: List[EmailAddress] = List()
       var data: String = ""
     }
 
@@ -129,7 +114,7 @@ class SmtpServer(val port: Int) {
     )
 
     def parse(value: String): SMTPMessage = {
-      val messageType = stringToType.filterKeys(x => value.startsWith(x)).values.headOption.getOrElse(DEFAULT)
+      val messageType = stringToType.filterKeys(x => value.toUpperCase().startsWith(x)).values.headOption.getOrElse(DEFAULT)
       return new SMTPMessage(messageType, value.substring(value.indexOf(messageType.dataSeparator) + messageType.dataSeparator.length()))
     }
 
@@ -142,7 +127,7 @@ class SmtpServer(val port: Int) {
 
     def rcptTo(email: EmailAddress): Boolean = {
       if (status != RCPTTO) { return false }
-      EMAIL.mailTo.+:(email)
+      EMAIL.mailTo = EMAIL.mailTo :+ email
       return true
     }
 
@@ -152,14 +137,14 @@ class SmtpServer(val port: Int) {
       return true
     }
 
-    def appendData(value: String): Tuple2[Boolean, DataStatus] = {
-     if (status != DATA) { return (false, DataStatus.NOT_FINISHED) }
+    def appendData(value: String): (Boolean, DataStatus, Option[Email]) = {
+     if (status != DATA) { return (false, DataStatus.NOT_FINISHED, None) }
      EMAIL.data += value
      if (EMAIL.data.getBytes().endsWith(CRLF_DOT_CRLF)) {
        status = QUIT
-       return (true, DataStatus.FINISHED)
+       return (true, DataStatus.FINISHED, Some(new Email(EMAIL.mailfrom, EMAIL.mailTo.toList, EMAIL.data)))
      }
-     return (true, DataStatus.NOT_FINISHED)
+     return (true, DataStatus.NOT_FINISHED, None)
     }
   }
 }

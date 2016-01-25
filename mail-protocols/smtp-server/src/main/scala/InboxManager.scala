@@ -13,11 +13,24 @@
  */
 
 /**
- * Created by Markus Mulkahainen on 21.1.2016.
+ * Created by markus on 24.1.2016.
  */
-object Main {
-  def main(args: Array[String]) = {
-    val server = new SmtpServer(8080)
-    val popServer = new Pop3Server(8081)
+object InboxManager {
+  var userToInbox: Map[EmailAddress, Inbox] = Map()
+
+  def put(email: Email): Unit = {
+    userToInbox.synchronized {
+      email.to
+        .map(x => if (userToInbox.contains(x)) userToInbox(x).put(email) else {
+          userToInbox += (x -> Inbox.create())
+          userToInbox(x).put(email)
+        })
+    }
+  }
+
+  def get(emailAddr: EmailAddress): Option[Inbox] = {
+    userToInbox.synchronized {
+      return userToInbox.get(emailAddr)
+    }
   }
 }
